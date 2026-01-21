@@ -1,0 +1,30 @@
+{
+  "plc": {
+    "stationNumber": 3
+  },
+  "monitoring": {
+    "intervalMs": 100
+  },
+  "devices": [
+    { "name": "데이터1", "address": "D0", "type": "Word" },
+    { "name": "데이터2", "address": "D10", "type": "Word" },
+    { "name": "비트1", "address": "M0", "type": "Bit" },
+    { "name": "입력1", "address": "X0", "type": "Bit" },
+    { "name": "출력1", "address": "Y0", "type": "Bit" }
+  ],
+  "zeromq": {
+    "enabled": true,
+    "publishEndpoint": "tcp://*:5555",
+    "subscribeEndpoint": "tcp://localhost:5556",
+    "subscribeEnabled": true,
+    "topicPrefix": "plc"
+  },
+  "mqtt": {
+    "enabled": true,
+    "broker": "localhost",
+    "port": 1883,
+    "topicPrefix": "plc",
+    "clientId": "Q03UDV_Monitor",
+    "subscribeEnabled": true
+  }
+}
