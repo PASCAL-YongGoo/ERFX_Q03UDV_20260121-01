@@ -53,6 +53,7 @@
   <ItemGroup>
     <Compile Include="ConfigManager.cs" />
     <Compile Include="DeviceItem.cs" />
+    <Compile Include="DoubleBufferedDataGridView.cs" />
     <Compile Include="Form1.cs">
       <SubType>Form</SubType>
     </Compile>

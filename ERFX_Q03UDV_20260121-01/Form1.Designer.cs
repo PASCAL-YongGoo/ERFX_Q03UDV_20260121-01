@@ -32,7 +32,7 @@ namespace ERFX_Q03UDV_20260121_01
             this.btnConnect = new System.Windows.Forms.Button();
             this.btnDisconnect = new System.Windows.Forms.Button();
             this.lblStatus = new System.Windows.Forms.Label();
-            this.dgvDevices = new System.Windows.Forms.DataGridView();
+            this.dgvDevices = new DoubleBufferedDataGridView();
             this.colName = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.colAddress = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.colType = new System.Windows.Forms.DataGridViewTextBoxColumn();
@@ -220,7 +220,7 @@ namespace ERFX_Q03UDV_20260121_01
         private System.Windows.Forms.Button btnConnect;
         private System.Windows.Forms.Button btnDisconnect;
         private System.Windows.Forms.Label lblStatus;
-        private System.Windows.Forms.DataGridView dgvDevices;
+        private DoubleBufferedDataGridView dgvDevices;
         private System.Windows.Forms.Timer tmrMonitor;
         private System.Windows.Forms.Panel pnlTop;
         private System.Windows.Forms.Label lblInterval;

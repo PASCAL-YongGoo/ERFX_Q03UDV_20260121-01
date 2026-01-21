@@ -33,6 +33,9 @@ namespace ERFX_Q03UDV_20260121_01
         private int _reconnectAttempts;
         private DateTime _lastReconnectAttempt = DateTime.MinValue;
 
+        // Background read flag to prevent concurrent reads
+        private volatile bool _isReading;
+
         public Form1()
         {
             InitializeComponent();
@@ -320,75 +323,115 @@ namespace ERFX_Q03UDV_20260121_01
 
         private void tmrMonitor_Tick(object sender, EventArgs e)
         {
+            // Skip if already reading (prevent overlap)
+            if (_isReading)
+                return;
+
             if (!_plcManager.IsConnected)
             {
-                // Attempt auto-reconnect
-                if (!TryAutoReconnect())
-                {
-                    return;
-                }
-            }
-
-            bool hasChanges;
-            bool success = _plcManager.ReadDevices(new List<DeviceItem>(_deviceItems), out hasChanges);
-
-            if (!success)
-            {
-                // Connection lost during read - attempt reconnect on next tick
-                System.Diagnostics.Debug.WriteLine("[WARN] PLC read failed, will attempt reconnect");
-                UpdateConnectionStatus();
+                // Attempt auto-reconnect on background thread
+                Task.Run(() => TryAutoReconnectAsync());
                 return;
             }
 
-            // Reset reconnect counter on successful read
-            _reconnectAttempts = 0;
-
-            // Only refresh UI when values changed
-            if (hasChanges && WindowState != FormWindowState.Minimized)
-                dgvDevices.Refresh();
-
-            // Only publish when values changed
-            if (hasChanges)
-                PublishDeviceValues();
+            // Run PLC read on background thread
+            _isReading = true;
+            Task.Run(() => ReadPlcAndUpdateUI());
         }
 
-        private bool TryAutoReconnect()
+        private void ReadPlcAndUpdateUI()
         {
-            // Check if we've exceeded max attempts
-            if (_reconnectAttempts >= MAX_RECONNECT_ATTEMPTS)
+            try
             {
-                tmrMonitor.Stop();
-                UpdateConnectionStatus();
-                System.Diagnostics.Debug.WriteLine($"[ERROR] Auto-reconnect failed after {MAX_RECONNECT_ATTEMPTS} attempts");
-                MessageBox.Show($"PLC 연결이 끊어졌습니다.\n자동 재연결 {MAX_RECONNECT_ATTEMPTS}회 시도 후 실패했습니다.\n수동으로 연결 버튼을 눌러주세요.",
-                    "연결 끊김", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return false;
-            }
+                bool hasChanges;
+                bool success = _plcManager.ReadDevices(new List<DeviceItem>(_deviceItems), out hasChanges);
 
-            // Check reconnect interval
-            var now = DateTime.Now;
-            if ((now - _lastReconnectAttempt).TotalMilliseconds < RECONNECT_INTERVAL_MS)
-            {
-                return false;
-            }
+                if (!success)
+                {
+                    // Connection lost during read
+                    System.Diagnostics.Debug.WriteLine("[WARN] PLC read failed, will attempt reconnect");
+                    BeginInvoke(new Action(UpdateConnectionStatus));
+                    return;
+                }
 
-            _lastReconnectAttempt = now;
-            _reconnectAttempts++;
-
-            System.Diagnostics.Debug.WriteLine($"[INFO] Auto-reconnect attempt {_reconnectAttempts}/{MAX_RECONNECT_ATTEMPTS}");
-
-            int result = _plcManager.Reconnect();
-            if (result == 0)
-            {
+                // Reset reconnect counter on successful read
                 _reconnectAttempts = 0;
-                UpdateConnectionStatus();
-                System.Diagnostics.Debug.WriteLine("[INFO] Auto-reconnect successful");
-                return true;
-            }
 
-            System.Diagnostics.Debug.WriteLine($"[WARN] Auto-reconnect failed: {PlcManager.GetErrorMessage(result)}");
-            UpdateConnectionStatus();
-            return false;
+                if (hasChanges)
+                {
+                    // Publish on background thread (no UI involved)
+                    PublishDeviceValues();
+
+                    // Update UI on UI thread
+                    BeginInvoke(new Action(() =>
+                    {
+                        if (WindowState != FormWindowState.Minimized)
+                            dgvDevices.Invalidate();
+                    }));
+                }
+            }
+            finally
+            {
+                _isReading = false;
+            }
+        }
+
+        private void TryAutoReconnectAsync()
+        {
+            try
+            {
+                bool shouldStop = false;
+
+                // Check if we've exceeded max attempts
+                if (_reconnectAttempts >= MAX_RECONNECT_ATTEMPTS)
+                {
+                    shouldStop = true;
+                    System.Diagnostics.Debug.WriteLine($"[ERROR] Auto-reconnect failed after {MAX_RECONNECT_ATTEMPTS} attempts");
+                }
+                else
+                {
+                    // Check reconnect interval
+                    var now = DateTime.Now;
+                    if ((now - _lastReconnectAttempt).TotalMilliseconds >= RECONNECT_INTERVAL_MS)
+                    {
+                        _lastReconnectAttempt = now;
+                        _reconnectAttempts++;
+
+                        System.Diagnostics.Debug.WriteLine($"[INFO] Auto-reconnect attempt {_reconnectAttempts}/{MAX_RECONNECT_ATTEMPTS}");
+
+                        int result = _plcManager.Reconnect();
+                        if (result == 0)
+                        {
+                            _reconnectAttempts = 0;
+                            System.Diagnostics.Debug.WriteLine("[INFO] Auto-reconnect successful");
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[WARN] Auto-reconnect failed: {PlcManager.GetErrorMessage(result)}");
+                        }
+                    }
+                }
+
+                // Update UI on UI thread
+                BeginInvoke(new Action(() =>
+                {
+                    if (shouldStop)
+                    {
+                        tmrMonitor.Stop();
+                        UpdateConnectionStatus();
+                        MessageBox.Show($"PLC 연결이 끊어졌습니다.\n자동 재연결 {MAX_RECONNECT_ATTEMPTS}회 시도 후 실패했습니다.\n수동으로 연결 버튼을 눌러주세요.",
+                            "연결 끊김", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                    else
+                    {
+                        UpdateConnectionStatus();
+                    }
+                }));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ERROR] TryAutoReconnectAsync: {ex.Message}");
+            }
         }
 
         private void PublishDeviceValues()
