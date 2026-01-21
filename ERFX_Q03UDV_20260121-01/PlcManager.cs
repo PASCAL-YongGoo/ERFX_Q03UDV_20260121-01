@@ -208,13 +208,24 @@ namespace ERFX_Q03UDV_20260121_01
 
         protected virtual void Dispose(bool disposing)
         {
-            if (!_disposed)
+            lock (_lock)
             {
+                if (_disposed)
+                    return;
+
                 if (disposing)
                 {
                     if (_isConnected)
                     {
-                        Disconnect();
+                        try
+                        {
+                            _plc.Close();
+                        }
+                        catch
+                        {
+                            // Ignore errors during dispose
+                        }
+                        _isConnected = false;
                     }
                 }
                 _disposed = true;

@@ -27,6 +27,12 @@ namespace ERFX_Q03UDV_20260121_01
         private string _zmqTopicPrefix;
         private string _mqttTopicPrefix;
 
+        // Auto-reconnect settings
+        private const int MAX_RECONNECT_ATTEMPTS = 3;
+        private const int RECONNECT_INTERVAL_MS = 5000;
+        private int _reconnectAttempts;
+        private DateTime _lastReconnectAttempt = DateTime.MinValue;
+
         public Form1()
         {
             InitializeComponent();
@@ -199,28 +205,53 @@ namespace ERFX_Q03UDV_20260121_01
                     return;
                 }
 
+                // Bit device value validation: only allow 0 or 1
+                if (targetDevice.Type == "Bit" && command.Value != 0 && command.Value != 1)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[WARN] Write rejected: Bit device '{address}' requires value 0 or 1, got {command.Value}");
+                    return;
+                }
+
                 if (!_plcManager.IsConnected)
                 {
                     System.Diagnostics.Debug.WriteLine($"[WARN] Write failed: PLC not connected (address: {address})");
                     return;
                 }
 
-                int result = _plcManager.WriteDevice(address, command.Value);
-                if (result == 0)
-                {
-                    targetDevice.Value = command.Value;
-                    if (WindowState != FormWindowState.Minimized)
-                        dgvDevices.Refresh();
-                    System.Diagnostics.Debug.WriteLine($"[INFO] Write success: {address} = {command.Value}");
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($"[ERROR] Write failed: {address} = {command.Value}, error: {PlcManager.GetErrorMessage(result)}");
-                }
+                // Execute PLC write on background thread to avoid blocking UI
+                int valueToWrite = command.Value;
+                Task.Run(() => ExecutePlcWrite(address, valueToWrite, targetDevice));
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[ERROR] ProcessWriteCommand exception: {ex.Message}");
+            }
+        }
+
+        private void ExecutePlcWrite(string address, int value, DeviceItem targetDevice)
+        {
+            try
+            {
+                int result = _plcManager.WriteDevice(address, value);
+                if (result == 0)
+                {
+                    // Marshal UI update back to UI thread
+                    BeginInvoke(new Action(() =>
+                    {
+                        targetDevice.Value = value;
+                        if (WindowState != FormWindowState.Minimized)
+                            dgvDevices.Refresh();
+                    }));
+                    System.Diagnostics.Debug.WriteLine($"[INFO] Write success: {address} = {value}");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ERROR] Write failed: {address} = {value}, error: {PlcManager.GetErrorMessage(result)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ERROR] ExecutePlcWrite exception: {ex.Message}");
             }
         }
 
@@ -291,25 +322,69 @@ namespace ERFX_Q03UDV_20260121_01
         {
             if (!_plcManager.IsConnected)
             {
-                // Connection lost - update UI and stop monitoring
-                tmrMonitor.Stop();
-                UpdateConnectionStatus();
-                return;
+                // Attempt auto-reconnect
+                if (!TryAutoReconnect())
+                {
+                    return;
+                }
             }
 
             bool success = _plcManager.ReadDevices(new List<DeviceItem>(_deviceItems));
 
             if (!success)
             {
-                // Connection lost during read - update UI
+                // Connection lost during read - attempt reconnect on next tick
+                System.Diagnostics.Debug.WriteLine("[WARN] PLC read failed, will attempt reconnect");
                 UpdateConnectionStatus();
                 return;
             }
+
+            // Reset reconnect counter on successful read
+            _reconnectAttempts = 0;
 
             if (WindowState != FormWindowState.Minimized)
                 dgvDevices.Refresh();
 
             PublishDeviceValues();
+        }
+
+        private bool TryAutoReconnect()
+        {
+            // Check if we've exceeded max attempts
+            if (_reconnectAttempts >= MAX_RECONNECT_ATTEMPTS)
+            {
+                tmrMonitor.Stop();
+                UpdateConnectionStatus();
+                System.Diagnostics.Debug.WriteLine($"[ERROR] Auto-reconnect failed after {MAX_RECONNECT_ATTEMPTS} attempts");
+                MessageBox.Show($"PLC 연결이 끊어졌습니다.\n자동 재연결 {MAX_RECONNECT_ATTEMPTS}회 시도 후 실패했습니다.\n수동으로 연결 버튼을 눌러주세요.",
+                    "연결 끊김", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+
+            // Check reconnect interval
+            var now = DateTime.Now;
+            if ((now - _lastReconnectAttempt).TotalMilliseconds < RECONNECT_INTERVAL_MS)
+            {
+                return false;
+            }
+
+            _lastReconnectAttempt = now;
+            _reconnectAttempts++;
+
+            System.Diagnostics.Debug.WriteLine($"[INFO] Auto-reconnect attempt {_reconnectAttempts}/{MAX_RECONNECT_ATTEMPTS}");
+
+            int result = _plcManager.Reconnect();
+            if (result == 0)
+            {
+                _reconnectAttempts = 0;
+                UpdateConnectionStatus();
+                System.Diagnostics.Debug.WriteLine("[INFO] Auto-reconnect successful");
+                return true;
+            }
+
+            System.Diagnostics.Debug.WriteLine($"[WARN] Auto-reconnect failed: {PlcManager.GetErrorMessage(result)}");
+            UpdateConnectionStatus();
+            return false;
         }
 
         private void PublishDeviceValues()
