@@ -21,7 +21,7 @@
   },
   "mqtt": {
     "enabled": true,
-    "broker": "localhost",
+    "broker": "192.168.20.2",
     "port": 1883,
     "topicPrefix": "plc",
     "clientId": "Q03UDV_Monitor",

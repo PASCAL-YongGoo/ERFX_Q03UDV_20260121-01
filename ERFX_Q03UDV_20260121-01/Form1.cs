@@ -329,7 +329,8 @@ namespace ERFX_Q03UDV_20260121_01
                 }
             }
 
-            bool success = _plcManager.ReadDevices(new List<DeviceItem>(_deviceItems));
+            bool hasChanges;
+            bool success = _plcManager.ReadDevices(new List<DeviceItem>(_deviceItems), out hasChanges);
 
             if (!success)
             {
@@ -342,10 +343,13 @@ namespace ERFX_Q03UDV_20260121_01
             // Reset reconnect counter on successful read
             _reconnectAttempts = 0;
 
-            if (WindowState != FormWindowState.Minimized)
+            // Only refresh UI when values changed
+            if (hasChanges && WindowState != FormWindowState.Minimized)
                 dgvDevices.Refresh();
 
-            PublishDeviceValues();
+            // Only publish when values changed
+            if (hasChanges)
+                PublishDeviceValues();
         }
 
         private bool TryAutoReconnect()

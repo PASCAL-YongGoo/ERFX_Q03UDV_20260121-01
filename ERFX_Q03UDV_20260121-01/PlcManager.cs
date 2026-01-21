@@ -104,10 +104,14 @@ namespace ERFX_Q03UDV_20260121_01
         }
 
         /// <summary>
-        /// Reads multiple devices. Returns true if all reads succeeded, false if connection lost.
+        /// Reads multiple devices.
         /// </summary>
-        public bool ReadDevices(List<DeviceItem> devices)
+        /// <param name="devices">List of devices to read</param>
+        /// <param name="hasChanges">True if any value changed</param>
+        /// <returns>True if all reads succeeded, false if connection lost</returns>
+        public bool ReadDevices(List<DeviceItem> devices, out bool hasChanges)
         {
+            hasChanges = false;
             lock (_lock)
             {
                 if (!_isConnected || devices == null)
@@ -119,7 +123,11 @@ namespace ERFX_Q03UDV_20260121_01
                     int result = _plc.GetDevice(device.Address, out value);
                     if (result == 0)
                     {
-                        device.Value = value;
+                        if (device.Value != value)
+                        {
+                            device.Value = value;
+                            hasChanges = true;
+                        }
                     }
                     else if (IsConnectionLostError(result))
                     {
