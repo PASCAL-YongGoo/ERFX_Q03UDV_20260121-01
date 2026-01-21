@@ -30,8 +30,6 @@ artifacts/
 
 # Claude Code
 .claude/
-load-env.ps1
-run-claude.bat
 
 # Misc
 nul
