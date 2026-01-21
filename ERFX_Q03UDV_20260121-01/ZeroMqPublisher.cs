@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using NetMQ;
 using NetMQ.Sockets;
 
@@ -35,6 +36,12 @@ namespace ERFX_Q03UDV_20260121_01
                 IsConnected = false;
                 throw;
             }
+        }
+
+        public Task ConnectAsync()
+        {
+            Connect();
+            return Task.CompletedTask;
         }
 
         public void Disconnect()

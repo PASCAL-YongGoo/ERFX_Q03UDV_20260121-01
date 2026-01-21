@@ -5,6 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Runtime.Serialization.Json;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace ERFX_Q03UDV_20260121_01
@@ -31,7 +32,7 @@ namespace ERFX_Q03UDV_20260121_01
             InitializeComponent();
         }
 
-        private void Form1_Load(object sender, EventArgs e)
+        private async void Form1_Load(object sender, EventArgs e)
         {
             string configPath = Path.Combine(Application.StartupPath, "config.json");
             _configManager = new ConfigManager(configPath);
@@ -50,9 +51,9 @@ namespace ERFX_Q03UDV_20260121_01
             tmrMonitor.Interval = _configManager.Config.Monitoring.IntervalMs;
             lblInterval.Text = $"갱신 주기: {tmrMonitor.Interval}ms";
 
-            InitializePublishers();
+            await InitializePublishersAsync();
             CacheDeviceTopics();
-            InitializeSubscribers();
+            await InitializeSubscribersAsync();
             UpdateConnectionStatus();
         }
 
@@ -65,7 +66,7 @@ namespace ERFX_Q03UDV_20260121_01
             }
         }
 
-        private void InitializePublishers()
+        private async Task InitializePublishersAsync()
         {
             var zmqConfig = _configManager.Config.ZeroMq;
             if (zmqConfig != null && zmqConfig.Enabled)
@@ -73,11 +74,13 @@ namespace ERFX_Q03UDV_20260121_01
                 try
                 {
                     _zmqPublisher = new ZeroMqPublisher(zmqConfig.PublishEndpoint);
-                    _zmqPublisher.Connect();
+                    await _zmqPublisher.ConnectAsync();
                     _zmqTopicPrefix = zmqConfig.TopicPrefix ?? "plc";
+                    System.Diagnostics.Debug.WriteLine($"[INFO] ZeroMQ Publisher connected: {zmqConfig.PublishEndpoint}");
                 }
                 catch (Exception ex)
                 {
+                    System.Diagnostics.Debug.WriteLine($"[ERROR] ZeroMQ Publisher init failed: {ex}");
                     MessageBox.Show($"ZeroMQ Publisher 초기화 실패: {ex.Message}",
                         "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     _zmqPublisher = null;
@@ -90,11 +93,13 @@ namespace ERFX_Q03UDV_20260121_01
                 try
                 {
                     _mqttPublisher = new MqttPublisher(mqttConfig.Broker, mqttConfig.Port, mqttConfig.ClientId);
-                    _mqttPublisher.Connect();
+                    await _mqttPublisher.ConnectAsync();
                     _mqttTopicPrefix = mqttConfig.TopicPrefix ?? "plc";
+                    System.Diagnostics.Debug.WriteLine($"[INFO] MQTT Publisher connected: {mqttConfig.Broker}:{mqttConfig.Port}");
                 }
                 catch (Exception ex)
                 {
+                    System.Diagnostics.Debug.WriteLine($"[ERROR] MQTT Publisher init failed: {ex}");
                     MessageBox.Show($"MQTT 초기화 실패: {ex.Message}",
                         "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     _mqttPublisher = null;
@@ -104,7 +109,7 @@ namespace ERFX_Q03UDV_20260121_01
             UpdatePublisherStatus();
         }
 
-        private void InitializeSubscribers()
+        private async Task InitializeSubscribersAsync()
         {
             var zmqConfig = _configManager.Config.ZeroMq;
             if (zmqConfig != null && zmqConfig.Enabled && zmqConfig.SubscribeEnabled)
@@ -113,11 +118,13 @@ namespace ERFX_Q03UDV_20260121_01
                 {
                     _zmqSubscriber = new ZeroMqSubscriber(zmqConfig.SubscribeEndpoint);
                     _zmqSubscriber.MessageReceived += OnMessageReceived;
-                    _zmqSubscriber.Connect();
-                    _zmqSubscriber.Subscribe(zmqConfig.TopicPrefix + "/");
+                    await _zmqSubscriber.ConnectAsync();
+                    await _zmqSubscriber.SubscribeAsync(zmqConfig.TopicPrefix + "/");
+                    System.Diagnostics.Debug.WriteLine($"[INFO] ZeroMQ Subscriber connected: {zmqConfig.SubscribeEndpoint}");
                 }
                 catch (Exception ex)
                 {
+                    System.Diagnostics.Debug.WriteLine($"[ERROR] ZeroMQ Subscriber init failed: {ex}");
                     MessageBox.Show($"ZeroMQ Subscriber 초기화 실패: {ex.Message}",
                         "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     _zmqSubscriber = null;
@@ -131,11 +138,13 @@ namespace ERFX_Q03UDV_20260121_01
                 {
                     _mqttSubscriber = new MqttSubscriber(mqttConfig.Broker, mqttConfig.Port, mqttConfig.ClientId);
                     _mqttSubscriber.MessageReceived += OnMessageReceived;
-                    _mqttSubscriber.Connect();
-                    _mqttSubscriber.Subscribe($"{mqttConfig.TopicPrefix}/+/set");
+                    await _mqttSubscriber.ConnectAsync();
+                    await _mqttSubscriber.SubscribeAsync($"{mqttConfig.TopicPrefix}/+/set");
+                    System.Diagnostics.Debug.WriteLine($"[INFO] MQTT Subscriber connected: {mqttConfig.Broker}:{mqttConfig.Port}");
                 }
                 catch (Exception ex)
                 {
+                    System.Diagnostics.Debug.WriteLine($"[ERROR] MQTT Subscriber init failed: {ex}");
                     MessageBox.Show($"MQTT Subscriber 초기화 실패: {ex.Message}",
                         "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     _mqttSubscriber = null;
@@ -147,7 +156,8 @@ namespace ERFX_Q03UDV_20260121_01
         {
             if (InvokeRequired)
             {
-                Invoke(new Action<string, string>(OnMessageReceived), topic, message);
+                // Use BeginInvoke to avoid deadlock - fire-and-forget UI marshaling
+                BeginInvoke(new Action<string, string>(OnMessageReceived), topic, message);
                 return;
             }
 
@@ -165,31 +175,52 @@ namespace ERFX_Q03UDV_20260121_01
                 if (string.IsNullOrEmpty(address))
                     return;
 
+                // Whitelist validation: only allow writes to registered device addresses
+                DeviceItem targetDevice = null;
+                foreach (var device in _deviceItems)
+                {
+                    if (device.Address == address)
+                    {
+                        targetDevice = device;
+                        break;
+                    }
+                }
+
+                if (targetDevice == null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[WARN] Write rejected: address '{address}' not in whitelist");
+                    return;
+                }
+
                 var command = DeserializeWriteCommand(message);
                 if (command == null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[WARN] Invalid write command format for topic '{topic}'");
                     return;
+                }
 
                 if (!_plcManager.IsConnected)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[WARN] Write failed: PLC not connected (address: {address})");
                     return;
+                }
 
                 int result = _plcManager.WriteDevice(address, command.Value);
                 if (result == 0)
                 {
-                    foreach (var device in _deviceItems)
-                    {
-                        if (device.Address == address)
-                        {
-                            device.Value = command.Value;
-                            break;
-                        }
-                    }
+                    targetDevice.Value = command.Value;
                     if (WindowState != FormWindowState.Minimized)
                         dgvDevices.Refresh();
+                    System.Diagnostics.Debug.WriteLine($"[INFO] Write success: {address} = {command.Value}");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ERROR] Write failed: {address} = {command.Value}, error: {PlcManager.GetErrorMessage(result)}");
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Ignore errors from invalid messages
+                System.Diagnostics.Debug.WriteLine($"[ERROR] ProcessWriteCommand exception: {ex.Message}");
             }
         }
 
@@ -259,9 +290,21 @@ namespace ERFX_Q03UDV_20260121_01
         private void tmrMonitor_Tick(object sender, EventArgs e)
         {
             if (!_plcManager.IsConnected)
+            {
+                // Connection lost - update UI and stop monitoring
+                tmrMonitor.Stop();
+                UpdateConnectionStatus();
                 return;
+            }
 
-            _plcManager.ReadDevices(new List<DeviceItem>(_deviceItems));
+            bool success = _plcManager.ReadDevices(new List<DeviceItem>(_deviceItems));
+
+            if (!success)
+            {
+                // Connection lost during read - update UI
+                UpdateConnectionStatus();
+                return;
+            }
 
             if (WindowState != FormWindowState.Minimized)
                 dgvDevices.Refresh();

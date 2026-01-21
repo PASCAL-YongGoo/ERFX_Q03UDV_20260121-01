@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using MQTTnet;
 using MQTTnet.Client;
 
@@ -26,6 +27,11 @@ namespace ERFX_Q03UDV_20260121_01
 
         public void Connect()
         {
+            ConnectAsync().GetAwaiter().GetResult();
+        }
+
+        public async Task ConnectAsync()
+        {
             if (IsConnected)
                 return;
 
@@ -40,7 +46,7 @@ namespace ERFX_Q03UDV_20260121_01
                     var payload = e.ApplicationMessage.PayloadSegment;
                     string message = Encoding.UTF8.GetString(payload.Array, payload.Offset, payload.Count);
                     MessageReceived?.Invoke(topic, message);
-                    return System.Threading.Tasks.Task.CompletedTask;
+                    return Task.CompletedTask;
                 };
 
                 var options = new MqttClientOptionsBuilder()
@@ -49,7 +55,7 @@ namespace ERFX_Q03UDV_20260121_01
                     .WithCleanSession()
                     .Build();
 
-                _client.ConnectAsync(options, CancellationToken.None).GetAwaiter().GetResult();
+                await _client.ConnectAsync(options, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception)
             {
@@ -77,6 +83,11 @@ namespace ERFX_Q03UDV_20260121_01
 
         public void Subscribe(string topicPattern)
         {
+            SubscribeAsync(topicPattern).GetAwaiter().GetResult();
+        }
+
+        public async Task SubscribeAsync(string topicPattern)
+        {
             if (_client == null || !IsConnected)
                 return;
 
@@ -84,7 +95,7 @@ namespace ERFX_Q03UDV_20260121_01
                 .WithTopicFilter(topicPattern)
                 .Build();
 
-            _client.SubscribeAsync(subscribeOptions, CancellationToken.None).GetAwaiter().GetResult();
+            await _client.SubscribeAsync(subscribeOptions, CancellationToken.None).ConfigureAwait(false);
         }
 
         public void Dispose()

@@ -26,6 +26,11 @@ namespace ERFX_Q03UDV_20260121_01
 
         public void Connect()
         {
+            ConnectAsync().GetAwaiter().GetResult();
+        }
+
+        public async Task ConnectAsync()
+        {
             if (IsConnected)
                 return;
 
@@ -40,7 +45,7 @@ namespace ERFX_Q03UDV_20260121_01
                     .WithCleanSession()
                     .Build();
 
-                _client.ConnectAsync(options, CancellationToken.None).GetAwaiter().GetResult();
+                await _client.ConnectAsync(options, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception)
             {

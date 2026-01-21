@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using NetMQ;
 using NetMQ.Sockets;
 
@@ -49,6 +50,12 @@ namespace ERFX_Q03UDV_20260121_01
             }
         }
 
+        public Task ConnectAsync()
+        {
+            Connect();
+            return Task.CompletedTask;
+        }
+
         public void Disconnect()
         {
             if (!IsConnected)
@@ -80,6 +87,12 @@ namespace ERFX_Q03UDV_20260121_01
                 return;
 
             _socket.Subscribe(topicPattern);
+        }
+
+        public Task SubscribeAsync(string topicPattern)
+        {
+            Subscribe(topicPattern);
+            return Task.CompletedTask;
         }
 
         private void ReceiveLoop()

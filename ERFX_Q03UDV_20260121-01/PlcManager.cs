@@ -6,13 +6,22 @@ namespace ERFX_Q03UDV_20260121_01
 {
     public class PlcManager : IDisposable
     {
+        private readonly object _lock = new object();
         private ActUtlType _plc;
         private int _stationNumber;
         private bool _isConnected;
         private bool _disposed;
 
-        public bool IsConnected => _isConnected;
+        public bool IsConnected
+        {
+            get { lock (_lock) { return _isConnected; } }
+        }
         public int StationNumber => _stationNumber;
+
+        // Error codes indicating connection loss
+        private const int ERR_TIMEOUT = 0x01800010;
+        private const int ERR_CONNECTION_FAILED = 0x01800011;
+        private const int ERR_NOT_OPEN = 0x01800005;
 
         public PlcManager(int stationNumber)
         {
@@ -24,75 +33,144 @@ namespace ERFX_Q03UDV_20260121_01
 
         public int Connect()
         {
-            if (_isConnected)
-                return 0;
+            lock (_lock)
+            {
+                if (_isConnected)
+                    return 0;
 
-            int result = _plc.Open();
-            _isConnected = (result == 0);
-            return result;
+                int result = _plc.Open();
+                _isConnected = (result == 0);
+                return result;
+            }
         }
 
         public int Disconnect()
         {
-            if (!_isConnected)
-                return 0;
-
-            int result = _plc.Close();
-            if (result == 0)
+            lock (_lock)
             {
-                _isConnected = false;
+                if (!_isConnected)
+                    return 0;
+
+                int result = _plc.Close();
+                if (result == 0)
+                {
+                    _isConnected = false;
+                }
+                return result;
             }
-            return result;
+        }
+
+        public int Reconnect()
+        {
+            lock (_lock)
+            {
+                if (_isConnected)
+                {
+                    _plc.Close();
+                    _isConnected = false;
+                }
+
+                int result = _plc.Open();
+                _isConnected = (result == 0);
+                return result;
+            }
         }
 
         public int ReadDevice(string address, out int value)
         {
             value = 0;
-            if (!_isConnected)
-                return -1;
+            lock (_lock)
+            {
+                if (!_isConnected)
+                    return -1;
 
-            return _plc.GetDevice(address, out value);
+                int result = _plc.GetDevice(address, out value);
+                CheckConnectionLoss(result);
+                return result;
+            }
         }
 
         public int WriteDevice(string address, int value)
         {
-            if (!_isConnected)
-                return -1;
+            lock (_lock)
+            {
+                if (!_isConnected)
+                    return -1;
 
-            return _plc.SetDevice(address, value);
+                int result = _plc.SetDevice(address, value);
+                CheckConnectionLoss(result);
+                return result;
+            }
         }
 
-        public void ReadDevices(List<DeviceItem> devices)
+        /// <summary>
+        /// Reads multiple devices. Returns true if all reads succeeded, false if connection lost.
+        /// </summary>
+        public bool ReadDevices(List<DeviceItem> devices)
         {
-            if (!_isConnected || devices == null)
-                return;
-
-            foreach (var device in devices)
+            lock (_lock)
             {
-                int value;
-                int result = _plc.GetDevice(device.Address, out value);
-                if (result == 0)
+                if (!_isConnected || devices == null)
+                    return false;
+
+                foreach (var device in devices)
                 {
-                    device.Value = value;
+                    int value;
+                    int result = _plc.GetDevice(device.Address, out value);
+                    if (result == 0)
+                    {
+                        device.Value = value;
+                    }
+                    else if (IsConnectionLostError(result))
+                    {
+                        _isConnected = false;
+                        return false;
+                    }
                 }
+                return true;
             }
         }
 
         public int ReadDeviceBlock(string startAddress, int count, out int[] values)
         {
             values = new int[count];
-            if (!_isConnected)
-                return -1;
+            lock (_lock)
+            {
+                if (!_isConnected)
+                    return -1;
 
-            return _plc.ReadDeviceBlock(startAddress, count, out values[0]);
+                int result = _plc.ReadDeviceBlock(startAddress, count, out values[0]);
+                CheckConnectionLoss(result);
+                return result;
+            }
         }
 
         public int WriteDeviceBlock(string startAddress, int count, int[] values)
         {
-            if (!_isConnected || values == null || values.Length < count)
-                return -1;
+            lock (_lock)
+            {
+                if (!_isConnected || values == null || values.Length < count)
+                    return -1;
 
-            return _plc.WriteDeviceBlock(startAddress, count, ref values[0]);
+                int result = _plc.WriteDeviceBlock(startAddress, count, ref values[0]);
+                CheckConnectionLoss(result);
+                return result;
+            }
+        }
+
+        private bool IsConnectionLostError(int errorCode)
+        {
+            return errorCode == ERR_TIMEOUT ||
+                   errorCode == ERR_CONNECTION_FAILED ||
+                   errorCode == ERR_NOT_OPEN;
+        }
+
+        private void CheckConnectionLoss(int errorCode)
+        {
+            if (IsConnectionLostError(errorCode))
+            {
+                _isConnected = false;
+            }
         }
 
         public static string GetErrorMessage(int errorCode)
