@@ -7,7 +7,7 @@
 ### 공유 문서 위치
 
 ```
-📁 d:\work\GitHub\ERFX_Integration\
+📁 ..\ERFX_Integration\
 ├── README.md                  # 개요
 ├── Integration_Plan.md        # 연동 계획서 (아키텍처, 시나리오, 구현 가이드)
 ├── Message_Specification.md   # 메시지 포맷 명세 (JSON 구조, 필드 정의)

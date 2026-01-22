@@ -76,6 +76,31 @@ namespace ERFX_Q03UDV_20260121_01
     }
 
     [DataContract]
+    public class BarcodeConfig
+    {
+        [DataMember(Name = "enabled")]
+        public bool Enabled { get; set; }
+
+        [DataMember(Name = "ipAddress")]
+        public string IpAddress { get; set; }
+
+        [DataMember(Name = "port")]
+        public int Port { get; set; }
+
+        [DataMember(Name = "triggerBitPosition")]
+        public int TriggerBitPosition { get; set; }
+
+        [DataMember(Name = "connectionTimeoutMs")]
+        public int ConnectionTimeoutMs { get; set; }
+
+        [DataMember(Name = "autoReconnect")]
+        public bool AutoReconnect { get; set; }
+
+        [DataMember(Name = "triggerCommand")]
+        public string TriggerCommand { get; set; }
+    }
+
+    [DataContract]
     public class AppConfig
     {
         [DataMember(Name = "plc")]
@@ -92,6 +117,9 @@ namespace ERFX_Q03UDV_20260121_01
 
         [DataMember(Name = "mqtt")]
         public MqttConfig Mqtt { get; set; }
+
+        [DataMember(Name = "barcode")]
+        public BarcodeConfig Barcode { get; set; }
     }
 
     public class ConfigManager
@@ -183,6 +211,16 @@ namespace ERFX_Q03UDV_20260121_01
                     TopicPrefix = "plc",
                     ClientId = "Q03UDV_Monitor",
                     SubscribeEnabled = true
+                },
+                Barcode = new BarcodeConfig
+                {
+                    Enabled = false,
+                    IpAddress = "192.168.20.10",
+                    Port = 8080,
+                    TriggerBitPosition = 0,
+                    ConnectionTimeoutMs = 3000,
+                    AutoReconnect = true,
+                    TriggerCommand = "+"
                 }
             };
         }

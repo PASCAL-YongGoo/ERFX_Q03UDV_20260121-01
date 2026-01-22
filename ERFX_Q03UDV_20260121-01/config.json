@@ -49,7 +49,7 @@
     { "name": "데이터41", "address": "D8018", "type": "Word" },
     { "name": "데이터42", "address": "D8019", "type": "Word" },
     { "name": "데이터43", "address": "D8020", "type": "Word" },
-    { "name": "데이터44", "address": "D8021", "type": "Word" },
+    { "name": "데이터44", "address": "D8021", "type": "Word" }
   ],
   "zeromq": {
     "enabled": true,
@@ -65,5 +65,14 @@
     "topicPrefix": "plc",
     "clientId": "Q03UDV_Monitor",
     "subscribeEnabled": true
+  },
+  "barcode": {
+    "enabled": false,
+    "ipAddress": "192.168.20.10",
+    "port": 8080,
+    "triggerBitPosition": 0,
+    "connectionTimeoutMs": 3000,
+    "autoReconnect": true,
+    "triggerCommand": "+"
   }
 }

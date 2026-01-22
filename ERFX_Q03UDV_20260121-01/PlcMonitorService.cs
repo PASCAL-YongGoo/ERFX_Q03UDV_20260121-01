@@ -38,6 +38,9 @@ namespace ERFX_Q03UDV_20260121_01
         private IMessageSubscriber _zmqSubscriber;
         private IMessageSubscriber _mqttSubscriber;
 
+        private BarcodeReaderClient _barcodeClient;
+        private int _previousD8008Value = -1; // D8008의 이전 값 저장
+
         private string _zmqTopicPrefix;
         private string _mqttTopicPrefix;
 
@@ -138,6 +141,7 @@ namespace ERFX_Q03UDV_20260121_01
             await InitializePublishersAsync();
             CacheDeviceTopics();
             await InitializeSubscribersAsync();
+            InitializeBarcodeClient();
         }
 
         /// <summary>
@@ -352,6 +356,45 @@ namespace ERFX_Q03UDV_20260121_01
             }
         }
 
+        private void InitializeBarcodeClient()
+        {
+            var barcodeConfig = _configManager.Config.Barcode;
+            if (barcodeConfig != null && barcodeConfig.Enabled)
+            {
+                try
+                {
+                    _barcodeClient = new BarcodeReaderClient(
+                        barcodeConfig.IpAddress,
+                        barcodeConfig.Port,
+                        barcodeConfig.ConnectionTimeoutMs,
+                        barcodeConfig.AutoReconnect
+                    );
+
+                    _barcodeClient.ConnectionStateChanged += (sender, isConnected) =>
+                    {
+                        string status = isConnected ? "연결됨" : "연결 끊김";
+                        System.Diagnostics.Debug.WriteLine($"[INFO] Barcode Reader {status}: {barcodeConfig.IpAddress}:{barcodeConfig.Port}");
+                    };
+
+                    _barcodeClient.ErrorOccurred += (sender, errorMsg) =>
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[ERROR] Barcode Reader: {errorMsg}");
+                    };
+
+                    // 초기 연결 시도
+                    _ = _barcodeClient.ConnectAsync();
+
+                    System.Diagnostics.Debug.WriteLine($"[INFO] Barcode Reader Client initialized: {barcodeConfig.IpAddress}:{barcodeConfig.Port}, Trigger Bit: {barcodeConfig.TriggerBitPosition}");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ERROR] Barcode Reader Client init failed: {ex}");
+                    ErrorOccurred?.Invoke("경고", $"Barcode Reader 초기화 실패: {ex.Message}");
+                    _barcodeClient = null;
+                }
+            }
+        }
+
         #endregion
 
         #region Private Methods - Monitoring Loop
@@ -401,6 +444,9 @@ namespace ERFX_Q03UDV_20260121_01
 
             _reconnectAttempts = 0;
 
+            // D8008 비트 변화 감지 및 바코드 트리거
+            CheckD8008AndTriggerBarcode();
+
             if (hasChanges)
             {
                 PublishDeviceValues();
@@ -441,6 +487,53 @@ namespace ERFX_Q03UDV_20260121_01
             }
 
             await Task.CompletedTask;
+        }
+
+        private void CheckD8008AndTriggerBarcode()
+        {
+            if (_barcodeClient == null || _configManager.Config.Barcode == null || !_configManager.Config.Barcode.Enabled)
+                return;
+
+            // D8008 디바이스 찾기
+            DeviceItem d8008Device = null;
+            foreach (var device in _deviceItems)
+            {
+                if (device.Address == "D8008")
+                {
+                    d8008Device = device;
+                    break;
+                }
+            }
+
+            if (d8008Device == null)
+                return;
+
+            int currentValue = d8008Device.Value;
+            int triggerBitPosition = _configManager.Config.Barcode.TriggerBitPosition;
+
+            // 이전 값이 설정되지 않았으면 현재 값을 저장하고 종료
+            if (_previousD8008Value == -1)
+            {
+                _previousD8008Value = currentValue;
+                return;
+            }
+
+            // 특정 비트가 0→1로 변경되었는지 확인
+            int bitMask = 1 << triggerBitPosition;
+            bool previousBit = (_previousD8008Value & bitMask) != 0;
+            bool currentBit = (currentValue & bitMask) != 0;
+
+            if (!previousBit && currentBit)
+            {
+                // 비트가 0에서 1로 변경됨 - 트리거 전송
+                string triggerCommand = _configManager.Config.Barcode.TriggerCommand ?? "+";
+                System.Diagnostics.Debug.WriteLine($"[INFO] D8008 bit {triggerBitPosition} changed 0→1, sending barcode trigger: '{triggerCommand}'");
+
+                _ = _barcodeClient.SendTriggerAsync(triggerCommand);
+            }
+
+            // 현재 값을 이전 값으로 저장
+            _previousD8008Value = currentValue;
         }
 
         #endregion
@@ -619,6 +712,7 @@ namespace ERFX_Q03UDV_20260121_01
                 _mqttPublisher?.Dispose();
                 _zmqSubscriber?.Dispose();
                 _mqttSubscriber?.Dispose();
+                _barcodeClient?.Dispose();
             }
 
             _disposed = true;

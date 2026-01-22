@@ -12,6 +12,7 @@
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
+    <RuntimeIdentifiers>win</RuntimeIdentifiers>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -51,6 +52,7 @@
     <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="BarcodeReaderClient.cs" />
     <Compile Include="ConfigManager.cs" />
     <Compile Include="DeviceItem.cs" />
     <Compile Include="DoubleBufferedDataGridView.cs" />
