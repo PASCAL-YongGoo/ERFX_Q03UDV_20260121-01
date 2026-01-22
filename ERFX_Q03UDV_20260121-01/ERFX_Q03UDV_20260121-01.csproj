@@ -65,6 +65,7 @@
     <Compile Include="MqttPublisher.cs" />
     <Compile Include="MqttSubscriber.cs" />
     <Compile Include="PlcManager.cs" />
+    <Compile Include="PlcMonitorService.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="PublishMessage.cs" />
     <Compile Include="WriteCommand.cs" />
