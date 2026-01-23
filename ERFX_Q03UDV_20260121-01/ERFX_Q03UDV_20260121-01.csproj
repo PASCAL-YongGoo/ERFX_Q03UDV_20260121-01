@@ -52,7 +52,6 @@
     <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="BarcodeReaderClient.cs" />
     <Compile Include="ConfigManager.cs" />
     <Compile Include="DeviceItem.cs" />
     <Compile Include="DoubleBufferedDataGridView.cs" />

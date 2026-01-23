@@ -65,14 +65,5 @@
     "topicPrefix": "plc",
     "clientId": "Q03UDV_Monitor",
     "subscribeEnabled": true
-  },
-  "barcode": {
-    "enabled": false,
-    "ipAddress": "192.168.20.10",
-    "port": 8080,
-    "triggerBitPosition": 0,
-    "connectionTimeoutMs": 3000,
-    "autoReconnect": true,
-    "triggerCommand": "+"
   }
 }
