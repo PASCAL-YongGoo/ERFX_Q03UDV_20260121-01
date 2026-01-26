@@ -28,8 +28,13 @@ artifacts/
 .env
 .env.*
 
-# Claude Code
+# Local settings (user-specific, do not commit)
 .claude/
+.omc/
+.opencode.json
+load-env.ps1
+run-*.bat
+nuget.exe
 
 # Misc
 nul
